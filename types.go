@@ -6,7 +6,43 @@ import (
 	"reflect"
 )
 
-func Extract(targetType reflect.Type, items ...interface{}) (targetObj interface{}) {
+func getPointerType(tp reflect.Type) reflect.Type {
+	for tp.Kind() == reflect.Ptr {
+		tp = tp.Elem()
+	}
+	return tp
+}
+
+func getPointerValue(val reflect.Value) reflect.Value {
+	for val.Kind() == reflect.Ptr {
+		val = reflect.Indirect(val)
+	}
+	return val
+}
+
+func Extract(target interface{}, items ...interface{}) (targetObj interface{}) {
+	switch tp := target.(type) {
+	case reflect.Type:
+		targetObj = extractNewInstance(tp, items)
+	default:
+		// targetType := getPointerType(reflect.TypeOf(target))
+		targetValue := getPointerValue(reflect.ValueOf(target))
+		if !targetValue.CanAddr() {
+			targetObj = extractNewInstance(
+				getPointerType(reflect.TypeOf(target)),
+				items,
+			)
+			return
+		}
+		for _, item := range items {
+			extract(&targetValue, item)
+		}
+		targetObj = targetValue.Interface()
+	}
+	return
+}
+
+func extractNewInstance(targetType reflect.Type, items []interface{}) (targetObj interface{}) {
 	target := reflect.New(targetType)
 
 	for _, item := range items {
@@ -19,10 +55,9 @@ func Extract(targetType reflect.Type, items ...interface{}) (targetObj interface
 }
 
 func extract(target *reflect.Value, item interface{}) {
-	itemType := reflect.TypeOf(item)
-	itemValue := reflect.ValueOf(item)
-
-	targetValue := reflect.Indirect(*target)
+	itemType := getPointerType(reflect.TypeOf(item))
+	itemValue := getPointerValue(reflect.ValueOf(item))
+	targetValue := getPointerValue(*target)
 
 	for i := 0; i < itemType.NumField(); i++ {
 		itemTypeField := itemType.Field(i)
@@ -30,10 +65,9 @@ func extract(target *reflect.Value, item interface{}) {
 
 		targetField := targetValue.FieldByName(itemTypeField.Name)
 
-		if !targetField.IsValid() {
+		if !targetField.IsValid() || !targetField.CanSet() {
 			continue
 		}
-
 		targetField.Set(itemValueField)
 
 	}
